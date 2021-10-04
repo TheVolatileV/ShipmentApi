@@ -1,12 +1,12 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Infrastructure;
+using Infrastructure.Models;
+using Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using UnitsNet;
-using UnitsNet.Units;
+using Web.Models;
 
 namespace Web.Controllers
 {
@@ -15,32 +15,34 @@ namespace Web.Controllers
     public class ShipmentController : Controller
     {
         private readonly ShipmentContext _ctx;
-        private readonly List<string> _supportedUnits;
+        private readonly IUomHelper _uomHelper;
 
-        public ShipmentController(ShipmentContext ctx)
+        public ShipmentController(ShipmentContext ctx, IUomHelper uomHelper)
         {
             _ctx = ctx;
-
-            _supportedUnits = new List<string>
-            {
-                "pounds",
-                "kilograms",
-                "ounces",
-                ""
-            };
+            _uomHelper = uomHelper;
         }
         
         [HttpPost]
-        public async Task<IActionResult> PostShipment(Shipment shipment)
+        public async Task<IActionResult> PostShipment(ShipmentVm shipment)
         {
             var entity = await _ctx.Shipments.AsNoTracking().FirstOrDefaultAsync(x => x.ReferenceId == shipment.ReferenceId);
             if (entity != null)
             {
-                _ctx.Shipments.Update(shipment);
+                entity.TransportPacks = shipment.TransportPacks;
+                entity.EstimatedTimeArrival = shipment.EstimatedTimeArrival;
+                entity.Organizations = await _ctx.Organizations.Where(x => shipment.Organizations.Contains(x.Code)).Select(x => x.Id).ToListAsync();
+                _ctx.Shipments.Update(entity);
             }
             else
             {
-                await _ctx.Shipments.AddAsync(shipment);
+                await _ctx.Shipments.AddAsync(new Shipment
+                {
+                    ReferenceId = shipment.ReferenceId,
+                    EstimatedTimeArrival = shipment.EstimatedTimeArrival,
+                    Organizations = await _ctx.Organizations.Where(x => shipment.Organizations.Contains(x.Code)).Select(x => x.Id).ToListAsync(),
+                    TransportPacks = shipment.TransportPacks
+                });
             }
 
             await _ctx.SaveChangesAsync();
@@ -49,62 +51,41 @@ namespace Web.Controllers
 
         [HttpGet]
         [Route("{id}")]
-        public async Task<ActionResult<Shipment>> GetShipment(string id)
+        public async Task<ActionResult<ShipmentVm>> GetShipment(string id)
         {
-            return await _ctx.Shipments.FindAsync(id);
+            var shipment = await _ctx.Shipments.FindAsync(id);
+            if (shipment == null)
+                return NotFound();
+
+            return new ShipmentVm
+            {
+                ReferenceId = shipment.ReferenceId,
+                EstimatedTimeArrival = shipment.EstimatedTimeArrival,
+                Organizations = await _ctx.Organizations.Where(x => shipment.Organizations.Contains(x.Id)).Select(x => x.Code).ToListAsync(),
+                TransportPacks = shipment.TransportPacks
+            };
         }
 
         [HttpPost]
         [Route("TotalWeight")]
-        public async Task<ActionResult<TotalWeight>> GetTotalWeight(string unit)
+        public ActionResult<TotalWeightResponse> GetTotalWeight(TotalWeightRequest request)
         {
-            var transportPacksList = await _ctx.Shipments.Select(x => x.TransportPacks).ToListAsync();
-            var finalUnitAbbrev = GetUomAbbrev(unit);
-            if (finalUnitAbbrev == "")
-                return BadRequest($"Provided unit '{unit}' is not supported");
-            var finalUnit = UnitParser.Default.Parse(finalUnitAbbrev, typeof(MassUnit));
-            var total = 0M;
-            
-            foreach (var transportPacks in transportPacksList)
+            try
             {
-                foreach (var pack in transportPacks.Nodes)
+                var transportPacksList = _ctx.Shipments.Select(x => x.TransportPacks).AsEnumerable();
+                var total = transportPacksList
+                    .SelectMany(transportPacks => transportPacks.Nodes)
+                    .Sum(pack => _uomHelper.ConvertTotalWeight(pack.TotalWeight, request.Unit));
+
+                return new TotalWeightResponse
                 {
-                    var uom = GetUomAbbrev(pack.TotalWeight.Unit);
-                    if (uom == "")
-                    {
-                        throw new ApplicationException($"{pack.TotalWeight.Unit} is not properly handled");
-                    }
-                    var unitType = UnitParser.Default.Parse(uom, typeof(MassUnit));
-                    total += Convert.ToDecimal(UnitConverter.Convert(pack.TotalWeight.Weight, unitType, finalUnit));
-                }
+                    Unit = request.Unit,
+                    Weight = total
+                };
             }
-
-            return new TotalWeight
+            catch (InvalidOperationException ex)
             {
-                Unit = unit,
-                Weight = total
-            };
-        }
-
-        private static string GetUomAbbrev(string unit)
-        {
-            switch (unit.ToLower())
-            {
-                case "ounce":
-                case "ounces":
-                case "oz":
-                    return "oz";
-                case "kilogram":
-                case "kilograms":
-                case "kg":
-                    return "kg";
-                case "pound":
-                case "pounds":
-                case "lbs":
-                    return "lbs";
-
-                default:
-                    return "";
+                return BadRequest(ex.Message);
             }
         }
     }

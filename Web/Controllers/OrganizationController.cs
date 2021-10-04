@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Infrastructure;
+using Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -38,7 +39,8 @@ namespace Web.Controllers
         [Route("{id:guid}")]
         public async Task<ActionResult<Organization>> GetOrg(Guid id)
         {
-            return await _ctx.Organizations.FindAsync(id);
+            var org = await _ctx.Organizations.FindAsync(id);
+            return org == null ? NotFound() : org;
         }
     }
 }

@@ -5,7 +5,7 @@ using System.Xml.Serialization;
 
 #nullable disable
 
-namespace Infrastructure
+namespace Infrastructure.Models
 {
     public partial class Shipment
     {
@@ -13,7 +13,7 @@ namespace Infrastructure
         public string Type { get; set; }
         public string ReferenceId { get; set; }
         public DateTime? EstimatedTimeArrival { get; set; }
-        public List<string> Organizations { get; set; }
+        public List<Guid> Organizations { get; set; }
         public TransportPacks TransportPacks { get; set; }
     }
     

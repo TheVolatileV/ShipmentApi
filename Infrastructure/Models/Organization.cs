@@ -4,7 +4,7 @@ using System.Xml.Serialization;
 
 #nullable disable
 
-namespace Infrastructure
+namespace Infrastructure.Models
 {
     public partial class Organization
     {
