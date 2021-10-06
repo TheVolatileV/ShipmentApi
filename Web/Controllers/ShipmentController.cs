@@ -36,11 +36,16 @@ namespace Web.Controllers
             }
             else
             {
+                var orgIds = await _ctx.Organizations.Where(x => shipment.Organizations.Contains(x.Code)).Select(x => x.Id).ToListAsync();
+                if (orgIds.Count != shipment.Organizations.Count)
+                {
+                    return BadRequest("Unknown organization code provided");
+                }
                 await _ctx.Shipments.AddAsync(new Shipment
                 {
                     ReferenceId = shipment.ReferenceId,
                     EstimatedTimeArrival = shipment.EstimatedTimeArrival,
-                    Organizations = await _ctx.Organizations.Where(x => shipment.Organizations.Contains(x.Code)).Select(x => x.Id).ToListAsync(),
+                    Organizations = orgIds,
                     TransportPacks = shipment.TransportPacks
                 });
             }
